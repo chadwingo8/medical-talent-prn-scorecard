@@ -108,7 +108,7 @@ select{font-size:13px;padding:8px 11px;border-radius:var(--r-sm);border:1.5px so
     <div class="nav-divider"></div>
     <div><div class="nav-title">Medical Talent - PRN</div><div class="nav-sub">Weekly Scorecard</div></div>
   </div>
-  <div class="nav-actions">
+  <div class="nav-actions"><span id="syncStatus" style="font-size:12px;opacity:.8;margin-right:4px;transition:color .3s"></span>
     <button class="btn btn-ghost" onclick="window.print()">&#128438; Print</button>
     <button class="btn btn-ghost" onclick="exportCSV()">&#8659; Export CSV</button>
     <button class="btn btn-ghost" onclick="document.getElementById('csvInput').click()">&#8657; Import CSV</button>
@@ -175,16 +175,49 @@ select{font-size:13px;padding:8px 11px;border-radius:var(--r-sm);border:1.5px so
 </div>
 
 <script>
-const SK = 'mt_prn_v2';
 let weeks = [], ci = -1;
 
-function load() {
-  try { const r = localStorage.getItem(SK); if (r) weeks = JSON.parse(r); } catch(e) { weeks = []; }
+// ── Sync status indicator ──────────────────────────────
+function setSyncStatus(state, msg) {
+  const el = document.getElementById('syncStatus');
+  if (!el) return;
+  const icons = { loading: '⟳', ok: '✓', error: '✕' };
+  const colors = { loading: '#6E6D6A', ok: '#1D9E75', error: '#C8202A' };
+  el.textContent = (icons[state] || '') + ' ' + msg;
+  el.style.color = colors[state] || '#6E6D6A';
+}
+
+async function load() {
+  setSyncStatus('loading', 'Loading…');
+  try {
+    const res = await fetch('/api/weeks');
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    weeks = await res.json();
+    setSyncStatus('ok', 'Synced');
+  } catch(e) {
+    console.error('Load failed:', e);
+    setSyncStatus('error', 'Could not load data');
+    weeks = [];
+  }
   rebuildSelect();
   if (weeks.length) { ci = 0; render(); }
 }
 
-function save() { try { localStorage.setItem(SK, JSON.stringify(weeks)); } catch(e) {} }
+async function save() {
+  setSyncStatus('loading', 'Saving…');
+  try {
+    const res = await fetch('/api/weeks', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(weeks)
+    });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    setSyncStatus('ok', 'Saved');
+  } catch(e) {
+    console.error('Save failed:', e);
+    setSyncStatus('error', 'Save failed — check connection');
+  }
+}
 
 const f$ = n => (n === '' || n == null) ? '—' : '$' + Number(n).toLocaleString('en-US', {minimumFractionDigits: 0, maximumFractionDigits: 0});
 const f$2 = n => (n === '' || n == null) ? '—' : '$' + Number(n).toFixed(2) + '/hr';
@@ -265,7 +298,7 @@ function loadWeek(i) { if (i === '') return; ci = Number(i); render(); }
 
 function deleteWeek() {
   if (!confirm('Delete this week? This cannot be undone.')) return;
-  weeks.splice(ci, 1); ci = 0; save(); rebuildSelect();
+  weeks.splice(ci, 1); ci = 0; rebuildSelect(); save();
   if (!weeks.length) {
     document.getElementById('wkHeading').textContent = 'Select a week';
     document.getElementById('wkSub').textContent = 'Add your first week to get started';
@@ -298,7 +331,7 @@ function saveWeek() {
     checking: document.getElementById('f_checking').value,
     reserve: document.getElementById('f_reserve').value
   });
-  ci = 0; save(); rebuildSelect(); render(); closeModal();
+  ci = 0; rebuildSelect(); render(); closeModal(); save();
 }
 
 function exportCSV() {
@@ -380,9 +413,9 @@ function importCSV(input) {
     // Merge and sort newest first
     weeks = [...weeks, ...newWeeks].sort((a, b) => b.date.localeCompare(a.date));
     ci = 0;
-    save();
     rebuildSelect();
     render();
+    save();
     input.value = '';
     alert('Imported ' + imported + ' week' + (imported !== 1 ? 's' : '') + (skipped ? ' (' + skipped + ' skipped — duplicates or missing dates)' : '') + '.');
   };
