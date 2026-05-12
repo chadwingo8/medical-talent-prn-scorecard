@@ -125,6 +125,7 @@ select{font-size:13px;padding:8px 11px;border-radius:var(--r-sm);border:1.5px so
     </div>
     <div class="week-controls">
       <select id="wkSelect" onchange="loadWeek(this.value)"><option value="">— no weeks yet —</option></select>
+      <button class="btn btn-outline" id="editBtn" onclick="editWeek()" style="display:none">&#x270E; Edit</button>
       <button class="btn btn-outline" id="delBtn" onclick="deleteWeek()" style="display:none">&#x1F5D1; Delete</button>
     </div>
   </div>
@@ -145,7 +146,7 @@ select{font-size:13px;padding:8px 11px;border-radius:var(--r-sm);border:1.5px so
 
 <div class="overlay" id="overlay">
   <div class="modal">
-    <div class="modal-head"><h2>Add week data</h2><button class="close-btn" onclick="closeModal()">&times;</button></div>
+    <div class="modal-head"><h2 id="modalTitle">Add week data</h2><button class="close-btn" onclick="closeModal()">&times;</button></div>
     <div class="modal-body">
       <div class="form-grid">
         <div class="form-section">Week</div>
@@ -219,11 +220,21 @@ async function save() {
   }
 }
 
-const f$ = n => (n === '' || n == null) ? '—' : '$' + Number(n).toLocaleString('en-US', {minimumFractionDigits: 0, maximumFractionDigits: 0});
-const f$2 = n => (n === '' || n == null) ? '—' : '$' + Number(n).toFixed(2) + '/hr';
-const fPct = n => (n == null || isNaN(n)) ? '—' : Number(n).toFixed(1) + '%';
-const fInt = n => (n === '' || n == null) ? '—' : Number(n).toLocaleString('en-US');
-const fHr = n => (n === '' || n == null) ? '—' : Number(n).toLocaleString('en-US', {minimumFractionDigits: 1, maximumFractionDigits: 1}) + ' hrs';
+// Show exact values — no rounding applied to entered data
+function fmtNum(n) {
+  if (n === '' || n == null) return '—';
+  const s = String(n).trim();
+  if (s === '') return '—';
+  // preserve exact decimal as entered
+  const num = Number(s);
+  if (isNaN(num)) return s;
+  return num % 1 === 0 ? num.toLocaleString('en-US') : num.toLocaleString('en-US', {minimumFractionDigits: 0, maximumFractionDigits: 10});
+}
+const f$ = n => (n === '' || n == null) ? '—' : '$' + fmtNum(n);
+const f$2 = n => (n === '' || n == null) ? '—' : '$' + fmtNum(n) + '/hr';
+const fPct = n => (n == null || isNaN(n)) ? '—' : Number(n).toFixed(4).replace(/\.?0+$/, '') + '%';
+const fInt = n => (n === '' || n == null) ? '—' : fmtNum(n);
+const fHr = n => (n === '' || n == null) ? '—' : fmtNum(n) + ' hrs';
 const fDate = d => d ? new Date(d + 'T12:00:00').toLocaleDateString('en-US', {weekday:'long',month:'long',day:'numeric',year:'numeric'}) : '';
 const fDateS = d => d ? new Date(d + 'T12:00:00').toLocaleDateString('en-US', {month:'short',day:'numeric',year:'numeric'}) : '';
 
@@ -256,6 +267,7 @@ function render() {
   document.getElementById('wkHeading').textContent = 'Week ending ' + fDateS(w.date);
   document.getElementById('wkSub').textContent = fDate(w.date);
   document.getElementById('delBtn').style.display = 'inline-flex';
+  document.getElementById('editBtn').style.display = 'inline-flex';
 
   const ct = trendHtml(w.checking, p?.checking, f$);
   const rt = trendHtml(w.reserve, p?.reserve, f$);
@@ -265,7 +277,7 @@ function render() {
     '<div class="grid grid-auto">' +
       metricCard('Revenue', f$(w.revenue), trendHtml(w.revenue, p?.revenue, f$), ' card-blue') +
       metricCard('Gross Profit', f$(w.gp), trendHtml(w.gp, p?.gp, f$), ' card-blue') +
-      metricCard('Gross Margin', fPct(gm), trendHtml(gm, pgm, n => n.toFixed(1) + '%')) +
+      metricCard('Gross Margin', fPct(gm), trendHtml(gm, pgm, n => fPct(n))) +
       metricCard('Avg Pay Rate', f$2(w.pay), trendHtml(w.pay, p?.pay, f$2, false)) +
       metricCard('Avg Bill Rate', f$2(w.bill), trendHtml(w.bill, p?.bill, f$2)) +
     '</div>' +
@@ -279,7 +291,7 @@ function render() {
       metricCard('Available Hours', fHr(w.avail), trendHtml(w.avail, p?.avail, fHr), ' card-teal') +
       metricCard('Booked Hours', fHr(w.booked), trendHtml(w.booked, p?.booked, fHr), ' card-teal') +
       metricCard('Billed Hours', fHr(w.billed), trendHtml(w.billed, p?.billed, fHr), ' card-teal') +
-      metricCard('Fill Rate', fPct(fl), trendHtml(fl, pfl, n => n.toFixed(1) + '%'), ' card-teal') +
+      metricCard('Fill Rate', fPct(fl), trendHtml(fl, pfl, n => fPct(n)), ' card-teal') +
     '</div>' +
     '<div class="section-label">Banking</div>' +
     '<div class="bank-grid">' +
@@ -303,21 +315,44 @@ function deleteWeek() {
     document.getElementById('wkHeading').textContent = 'Select a week';
     document.getElementById('wkSub').textContent = 'Add your first week to get started';
     document.getElementById('delBtn').style.display = 'none';
+    document.getElementById('editBtn').style.display = 'none';
     document.getElementById('scorecard').innerHTML = '<div class="empty"><div class="empty-icon"><svg viewBox="0 0 24 24"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg></div><h2>No scorecard data yet</h2><p>Add your first week to start tracking performance.</p><button class="btn btn-primary" onclick="openModal()">+ Add first week</button></div>';
   } else render();
 }
 
+let editMode = false;
+
 function openModal() {
+  editMode = false;
+  document.getElementById('modalTitle').textContent = 'Add week data';
   document.getElementById('f_date').value = new Date().toISOString().slice(0, 10);
+  document.getElementById('f_date').readOnly = false;
   ['revenue','gp','pay','bill','clients','providers','avail','booked','billed','checking','reserve'].forEach(k => document.getElementById('f_' + k).value = '');
   document.getElementById('overlay').classList.add('open');
 }
-function closeModal() { document.getElementById('overlay').classList.remove('open'); }
+
+function editWeek() {
+  if (ci < 0 || !weeks[ci]) return;
+  editMode = true;
+  const w = weeks[ci];
+  document.getElementById('modalTitle').textContent = 'Edit week data';
+  document.getElementById('f_date').value = w.date;
+  document.getElementById('f_date').readOnly = true;
+  ['revenue','gp','pay','bill','clients','providers','avail','booked','billed','checking','reserve'].forEach(k => {
+    document.getElementById('f_' + k).value = w[k] || '';
+  });
+  document.getElementById('overlay').classList.add('open');
+}
+
+function closeModal() {
+  document.getElementById('overlay').classList.remove('open');
+  document.getElementById('f_date').readOnly = false;
+}
 
 function saveWeek() {
   const date = document.getElementById('f_date').value;
   if (!date) { alert('Please enter a date.'); return; }
-  weeks.unshift({
+  const entry = {
     date,
     revenue: document.getElementById('f_revenue').value,
     gp: document.getElementById('f_gp').value,
@@ -330,8 +365,14 @@ function saveWeek() {
     billed: document.getElementById('f_billed').value,
     checking: document.getElementById('f_checking').value,
     reserve: document.getElementById('f_reserve').value
-  });
-  ci = 0; rebuildSelect(); render(); closeModal(); save();
+  };
+  if (editMode) {
+    weeks[ci] = entry;
+  } else {
+    weeks.unshift(entry);
+    ci = 0;
+  }
+  rebuildSelect(); render(); closeModal(); save();
 }
 
 function exportCSV() {
